@@ -1,0 +1,224 @@
+---
+title: "CEMA INTERNSHIP"
+author: "Nimrod Masini Wanyonyi"
+date: "2025-04-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(reticulate)
+use_condaenv("myenv")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Question One
+##### Importing Libraries
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.formula.api as smf
+```
+
+##### Loading HIV Data
+```{python}
+hiv_df = pd.read_csv('HIV data 2000-2023.csv', encoding="ISO-8859-1")
+hiv_df.head()
+```
+
+##### Cleaning HIV Data
+```{python}
+hiv_df = hiv_df[hiv_df['Value'].str.lower() != 'no data'].copy()
+hiv_df['Value'] = hiv_df['Value'].replace({'<100 [<100 - <100]': 50, '<100 [<100 - <200]': 150, '<200 [<100 - <200]': 150, '<200 [<200 - <200]': 100, '<200 [<200 - <500]': 350, '<500 [<200 - <500]': 350, '<500 [<500 - <500]': 250, '<500 [<500 - <510]': 505, '<500 [<500 - <520]': 510, '<500 [<500 - <530]': 515, '<500 [<500 - <650]': 575, '<500 [<500 - <690]': 595, '<200 [<100 - <500]': 300, '<200 [<200 - <620]': 410})
+hiv_df["HIV Estimate"] = hiv_df["Value"].astype(str).str.replace(" ", "").str.extract(r"(\d+)").astype(float)
+```
+
+##### Top 75% Contributor countries
+```{python}
+country_totals = hiv_df.groupby("Location")["HIV Estimate"].sum().sort_values(ascending=False).reset_index()
+
+total_sum = country_totals["HIV Estimate"].sum()
+country_totals["Cumulative_%"] = country_totals["HIV Estimate"].cumsum() / total_sum * 100
+
+top_75_countries = country_totals[country_totals["Cumulative_%"] <= 75]["Location"].to_list()
+
+top_75_countries
+```
+
+##### HIV trend in top contributor Countries
+```{python}
+top_df = hiv_df[hiv_df["Location"].isin(top_75_countries)]
+
+plt.figure(figsize=(12, 6))
+sns.lineplot(data=top_df, x="Period", y="HIV Estimate", hue="Location")
+plt.title("HIV Trend: Top Countries Contributing 75% of Global Burden")
+plt.ylabel("HIV Estimate")
+
+plt.show()
+```
+
+##### Trend per WHO Region
+```{python}
+top_df = hiv_df[hiv_df["Location"].isin(top_75_countries)]
+
+g = sns.FacetGrid(top_df, col="ParentLocationCode", col_wrap=3, height=4, sharey=False)
+g.map_dataframe(sns.lineplot, x="Period", y="HIV Estimate", hue="Location")
+g.add_legend()
+
+g.set_axis_labels("Year", "HIV Estimate")
+g.fig.subplots_adjust(top=0.9)
+g.fig.suptitle("HIV Trend per WHO Region (Top 75% Countries)")
+
+plt.show()
+```
+
+##### Loading Multidimensional poverty data
+```{python}
+poverty_df = pd.read_excel("multidimensional_poverty.xlsx", sheet_name="data")
+
+poverty_df.to_csv("multidimensional_poverty.csv", index=False)
+poverty_df.head()
+```
+
+##### Merging HIV and Poverty data
+```{python}
+merged_df = pd.merge(hiv_df, poverty_df, left_on=["SpatialDimValueCode", "Period"], right_on=["Country code", "Reporting year"], how="inner")
+```
+
+##### Correlation Analysis
+```{python}
+merged_df = merged_df.rename(columns={
+    "HIV Estimate": "HIVEstimate",
+    "Educational attainment (%)": "EducationAttainment",
+    "Educational enrollment (%)": "EducationEnrollment",
+    "Electricity (%)": "Electricity",
+    "Sanitation (%)": "Sanitation",
+    "Drinking water (%)": "WaterAccess",
+    "Multidimensional poverty headcount ratio (%)": "PovertyRatio"
+})
+```
+
+```{python}
+cols = ["EducationAttainment", "EducationEnrollment", "Electricity", "Sanitation", "WaterAccess", "PovertyRatio"]
+merged_df[cols] = merged_df[cols].replace('-', np.nan)
+merged_df[cols] = merged_df[cols].apply(pd.to_numeric)
+
+print(merged_df[cols].corr())
+```
+
+##### Mixed Linear Model
+```{python}
+selected_columns = ['IndicatorCode', 'Indicator', 'ValueType', 'ParentLocationCode', 'ParentLocation', 'Location type', 'SpatialDimValueCode', 'Location', 'Period type', 'Period', 'HIVEstimate', 'EducationAttainment', 'EducationEnrollment', 'Electricity', 'Sanitation', 'WaterAccess', 'PovertyRatio']
+
+filtered_df = merged_df[selected_columns].dropna()
+
+model = smf.mixedlm("HIVEstimate ~ EducationAttainment + EducationEnrollment + Electricity + Sanitation + WaterAccess + PovertyRatio", filtered_df, groups=filtered_df["SpatialDimValueCode"])
+result = model.fit()
+
+print(result.summary())
+```
+
+##### Results
+From the Analysis,top contributor countries that contributed to 75% of the global burden were South Africa, Mozambique, Nigeria, Kenya, United Republic of Tanzania, Zimbabwe, Uganda, Zambia, Malawi, Brazil, Thailand, Ethiopia, Democratic Republic of the Congo and Cote d'Ivoire, with South Africa as the leading contributor and Cote d'Ivoire as the least.
+Also, The variables that significantly impact HIV are Monetary, Education attainment, Education enrollment, electricity, sanitation, and Water access. Multidimensional Poverty ratio did not show a strong effect on the HIV estimate.
+
+
+#### Question Two: UN Dataset
+##### Loading Dataset
+```{python}
+un_df = pd.read_csv("dataset_datascience.csv", encoding = 'ISO-8859-1', low_memory=False)
+un_df.head()
+```
+
+##### Filtering EAC Countries
+```{python}
+eac_country_codes = ["BDI", "COD", "KEN", "RWA","SSD", "SOM", "TZA", "UGA"]
+
+un_df['REF_AREA'] = un_df['REF_AREA'].str.strip().str.upper()
+un_df['Series Name'] = un_df['Series Name'].str.strip().str.lower()
+un_df = un_df[(un_df['REF_AREA'].isin(eac_country_codes)) & (un_df['Series Name'] == "un igme estimate")]
+un_df
+```
+
+##### Loading shapefiles
+```{python}
+import geopandas as gpd
+import os
+
+gdf_list = []
+
+for code in eac_country_codes:
+    filepath = f'shapefiles/{code}/gadm41_{code}_0.shp'
+    if os.path.exists(filepath):
+        gdf = gpd.read_file(filepath)
+        gdf['ISO_A3'] = code  
+        gdf_list.append(gdf)
+
+gdf_eac = pd.concat(gdf_list, ignore_index=True)
+```
+
+##### Latest Mortality Data
+```{python}
+un_df['Reference Date'] = un_df['Reference Date'].astype(int)
+
+filtered = un_df[un_df['Indicator'].isin(['Neonatal mortality rate', 'Under-five mortality rate'])]
+
+filtered_latest = filtered.sort_values('Reference Date').groupby(['REF_AREA', 'Indicator'], as_index=False).last()
+
+un_df_pivot = filtered_latest.pivot(index='REF_AREA', columns='Indicator', values='Observation Value').reset_index()
+un_df_pivot
+```
+
+##### Merging shapefiles with mortality data
+```{python}
+gdf_merged = gdf_eac.merge(un_df_pivot, left_on='ISO_A3', right_on='REF_AREA')
+gdf_merged
+```
+
+##### Mapping Mortality rates
+```{python}
+fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+
+# Plot for Under-Five Mortality Rate
+gdf_merged.plot(column='Under-five mortality rate', cmap='OrRd', legend=True, ax=ax[0], edgecolor='black', linewidth=0.1)
+ax[0].set_title('Under-Five Mortality Rate in EAC Countries')
+ax[0].axis('off')
+
+# Plot for Neonatal Mortality Rate
+gdf_merged.plot(column='Neonatal mortality rate', cmap='YlGnBu', legend=True, ax=ax[1], edgecolor='black', linewidth=0.1)
+ax[1].set_title('Neonatal Mortality Rate in EAC Countries')
+ax[1].axis('off')
+
+plt.show()
+```
+
+##### Trend analysis over time
+```{python}
+un_df['Reference Date'] = pd.to_datetime(un_df['Reference Date'], format='%Y')
+filtered = un_df[un_df['Indicator'].isin(['Neonatal mortality rate', 'Under-five mortality rate'])]
+
+avg_trends = filtered.groupby([filtered['Reference Date'].dt.year, 'Indicator']).mean(numeric_only=True).reset_index()
+
+fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+
+under_five = avg_trends[avg_trends['Indicator'] == 'Under-five mortality rate']
+ax[0].plot(under_five['Reference Date'], under_five['Observation Value'], marker='o', color='blue')
+ax[0].set_title('Average Trend in Under-Five Mortality Rate')
+ax[0].set_xlabel('Year')
+ax[0].set_ylabel('Average Mortality Rate')
+ax[0].grid(True)
+
+neonatal = avg_trends[avg_trends['Indicator'] == 'Neonatal mortality rate']
+ax[1].plot(neonatal['Reference Date'], neonatal['Observation Value'], marker='o', color='red')
+ax[1].set_title('Average Trend in Neonatal Mortality Rate')
+ax[1].set_xlabel('Year')
+ax[1].set_ylabel('Average Mortality Rate')
+ax[1].grid(True)
+
+plt.show()
+```
+
+#### Results
+Somalia had the highest under-five mortality rate among East African Community countries, whereas South Sudan had the highest neonatal mortality rate among the EAC countries.
+Between 1950 and 2020, East Africa experienced a significant decline in under-five and neonatal mortality rates.
